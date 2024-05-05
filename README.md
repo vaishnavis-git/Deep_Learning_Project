@@ -6,3 +6,5 @@ This project focuses on enhancing text generation and text editing on AI-generat
 ## Objectives
 - **Text Correction**: Correct misspellings and improperly generated text in AI-generated posters and images while maintaining the original font and style.
 - **Text Cleaning**: Remove unnecessary or unwanted text by accurately inpainting those regions
+
+For everyone's code contribution please check individual branches.
