@@ -6,5 +6,5 @@ Text-to-image generation models have improved significantly since OpenAI's DALL-
 UDiffText a model that corrects text on images by incorporating a character-level encoder and utilizes a pre-trained diffusion model, is also robust in addressing incorrect spellings. Although it outperforms all SOTA models in correcting text, it does not render the rest of the poster well.
 
 ## Our Objectives
-**Enhancing the style of the font on the masked text region**
-**Maintaining the overall style of the poster**
+1. **Enhancing the style of the font on the masked text region**
+2. **Maintaining the overall style of the poster**
