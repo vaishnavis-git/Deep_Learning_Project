@@ -106,8 +106,15 @@ class StandardDiffusionLoss(nn.Module):
                 (w * (model_output - target).abs()).reshape(target.shape[0], -1), 1
             )
         elif self.type == "huber":
-            print("Using Huber loss in diff_loss")
-            return (w * F.huber_loss(model_output, target, reduction='none')).mean()
+            print("Using Huber loss in diff loss")
+            diff = torch.abs(model_output - target)
+            loss = torch.where(diff < 1, 0.5 * (diff ** 2) / 1, diff - 0.5 * 1)
+            return torch.mean(w * loss).reshape(target.shape[0], -1)
+            
+        # elif self.type == "huber":
+        #     return torch.mean(
+        #         (w * F.huber_loss(model_output, target)).reshape(target.shape[0], -1), 1
+        #     )
 
 
 class FullLoss(StandardDiffusionLoss):
