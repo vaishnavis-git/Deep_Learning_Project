@@ -27,6 +27,8 @@ class ResNetFeatures(nn.Module):
         x = self.features(x)
         return x
 
+#Tried VGG before ResNet  -- (Bhuvi)
+
 # class VGGFeatures(nn.Module):
 #     def __init__(self):
 #         super(VGGFeatures, self).__init__()
@@ -50,7 +52,7 @@ class StandardDiffusionLoss(nn.Module):
     def __init__(
         self,
         sigma_sampler_config,
-        type="huber",
+        type="l2",
         offset_noise_level=0.0,
         batch2model_keys: Optional[Union[str, List[str], ListConfig]] = None,
     ):
@@ -106,15 +108,8 @@ class StandardDiffusionLoss(nn.Module):
                 (w * (model_output - target).abs()).reshape(target.shape[0], -1), 1
             )
         elif self.type == "huber":
-            print("Using Huber loss in diff loss")
-            diff = torch.abs(model_output - target)
-            loss = torch.where(diff < 1, 0.5 * (diff ** 2) / 1, diff - 0.5 * 1)
-            return torch.mean(w * loss).reshape(target.shape[0], -1)
-            
-        # elif self.type == "huber":
-        #     return torch.mean(
-        #         (w * F.huber_loss(model_output, target)).reshape(target.shape[0], -1), 1
-        #     )
+            #print("Using Huber loss in diff_loss")
+            return (w * F.huber_loss(model_output, target, reduction='none')).mean()
 
 
 class FullLoss(StandardDiffusionLoss):
@@ -130,7 +125,7 @@ class FullLoss(StandardDiffusionLoss):
         lambda_style_loss=0.0,
         lambda_mask_loss=0.0,
         ocr_enabled = False,
-        style_enabled = True,
+        style_enabled = False,
         mask_enabled = False,
         predictor_config = None,
         input_key: str = "image",
@@ -147,7 +142,8 @@ class FullLoss(StandardDiffusionLoss):
         self.lambda_local_loss = lambda_local_loss
         self.lambda_ocr_loss = lambda_ocr_loss
         self.lambda_style_loss = lambda_style_loss
-        self.lambda_mask_loss = lambda_mask_loss
+        self.lambda_mask_loss = lambda_style_loss
+
         self.mask_enabled= mask_enabled
         self.style_enabled = style_enabled
         self.ocr_enabled = ocr_enabled
@@ -202,16 +198,16 @@ class FullLoss(StandardDiffusionLoss):
         diff_loss = diff_loss.mean()
         local_loss = local_loss.mean()
 
-        if self.mask_enabled:
-            mask_loss = self.get_mask_local_loss(network.diffusion_model.attn_map_cache, batch["mask"])
-            # print("Mask enabled")
-        
         if self.ocr_enabled:
             ocr_loss = self.get_ocr_loss(model_output, batch["r_bbox"], batch["label"], first_stage_model, scaler)
             ocr_loss = ocr_loss.mean()
 
-        if self.style_enabled:
+        if self.mask_enabled:
+            mask_loss = self.get_mask_local_loss(network.diffusion_model.attn_map_cache, batch["mask"])
+            print("Mask enabled")
+            # mask_loss = mask_loss.mean()
 
+        if self.style_enabled:
             original_crops = self.get_cropped_images(batch[self.input_key], batch["r_bbox"])
             print("Getting model output")
             model_output = 1 / scaler * model_output
@@ -219,7 +215,6 @@ class FullLoss(StandardDiffusionLoss):
             gen_crops = self.get_cropped_images(model_output_decoded, batch["r_bbox"])
             
             total_style_loss = self.get_style_local_loss(gen_crops, original_crops)
-            
 
         loss = diff_loss + self.lambda_local_loss * local_loss
         
@@ -244,16 +239,17 @@ class FullLoss(StandardDiffusionLoss):
             loss_dict["loss/mask_loss"] = mask_loss
 
         return loss, loss_dict
-
+        
     def get_cropped_images(self, images, bboxes):
         crops = []
         for i, bbox in enumerate(bboxes):
             m_top, m_bottom, m_left, m_right = bbox
             crop = images[:, :, m_top:m_bottom, m_left:m_right]
-            crop_features = self.resnet(crop)
+            print(images.shape, crop.shape)
+            crop_features = self.resnet(crop)  # Extract features for the crop
             crops.append(crop_features)
+            # crops.append(images[:, :, m_top:m_bottom, m_left:m_right])
         return crops
-        
 
     def get_mask_local_loss(self, attn_map_cache, mask):
         mask_loss = 0
@@ -265,7 +261,8 @@ class FullLoss(StandardDiffusionLoss):
     
             attn_map = item["attn_map"]
             if attn_map is None:
-                continue
+              print("kuch nahi hai")
+              continue
     
             resized_mask = F.interpolate(mask, size=attn_map.shape[-2:], mode='nearest')
             mask_loss += (attn_map * resized_mask).mean()
@@ -276,16 +273,14 @@ class FullLoss(StandardDiffusionLoss):
 
         return mask_loss
     
-    def get_style_local_loss(self,gen_crop, original_crop):
-
+    def get_style_local_loss(self,gen_images, original_images):
         style_loss = 0
         num=0
-        for gen_f, orig_f in zip(gen_crop, original_crop):
+        for gen_f, orig_f in zip(gen_images, original_images):
             gm_gen = gram_matrix(gen_f)
             gm_orig = gram_matrix(orig_f)
             style_loss += F.mse_loss(gm_gen, gm_orig)
             num+=1
-
         return style_loss/num
     
     def get_ocr_loss(self, model_output, r_bbox, label, first_stage_model, scaler):
